@@ -12,18 +12,16 @@ export = function (bucket: string): any {
 
 	let transform = function(file: any, encoding: string, callback: any) {
 		if (file.isNull()) {
-			callback();
+			return callback();
 		}
 
 		// Remember we have seen this file and push down the pipeline
 		_localFiles.push(file.relative);
-		this.push(file);
+		callback(null, file);
 
-		// FIXME: Investigate listing all remote objects first to gather the list of all ETags in one HTTP request
 		s3.headObject({Bucket: bucket, Key: file.relative}, (err, data) => {
 			if (err && err.statusCode !== 403 && err.statusCode !== 404) {
-				callback(new gutil.PluginError(PLUGIN_NAME, 'headObject error: ' + err.stack));
-				return;
+				throw new gutil.PluginError(PLUGIN_NAME, 'headObject error: ' + err.stack);
 			}
 
 			// The file is already present. Let's hash our local copy and compare with the ETag
@@ -35,7 +33,7 @@ export = function (bucket: string): any {
 
 				if (eTag == '"' + localHash + '"') {
 					gutil.log(gutil.colors.gray('Unchanged: '), file.relative);
-					return callback();
+					return;
 				} else {
 					shouldUpdate = true;
 				}
@@ -51,13 +49,13 @@ export = function (bucket: string): any {
 				if (file.stat) {
 					uploadParams.ContentLength = file.stat.size;
 				} else {
-					return callback(new gutil.PluginError(PLUGIN_NAME, 'cannot upload a stream object without know content-length'));
+					throw new gutil.PluginError(PLUGIN_NAME, 'cannot upload a stream object without know content-length');
 				}
 			}
 
 			s3.putObject(uploadParams, (err, data) => {
 				if (err) {
-					return callback(new gutil.PluginError(PLUGIN_NAME, 'putObject error: ' + err.stack));
+					throw new gutil.PluginError(PLUGIN_NAME, 'putObject error: ' + err.stack);
 				}
 
 				if (shouldUpdate) {
@@ -65,7 +63,6 @@ export = function (bucket: string): any {
 				} else {
 					gutil.log(gutil.colors.green('Uploading: '), file.relative);
 				}
-				callback();
 			});
 		});
 	};
